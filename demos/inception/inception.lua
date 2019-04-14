@@ -442,8 +442,8 @@ function polygon_stroke(p, c)
 end
 
 function polygon_fill(p, c)
-	for x = 1, SCR_W - 1 do
-		for y = 1, SCR_H - 1 do
+	for x = 1, SCR_W - 1, 2 do
+		for y = 1, SCR_H - 1, 2 do
 			if even_odd(p, { x = x, y = y }) == 'inside' then
 				pix(x, y, c)
 			end
