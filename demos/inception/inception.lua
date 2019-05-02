@@ -227,6 +227,17 @@ function init()
 		end
 	end
 
+	function init_rpp(u, v, h)
+		g_rpp = { a1 = { x = -u, y = -v, z =  h, w = 1 },
+				  b1 = { x = -u, y =  v, z =  h, w = 1 },
+				  c1 = { x = -u, y =  v, z = -h, w = 1 },
+				  d1 = { x = -u, y = -v, z = -h, w = 1 },
+				  a2 = { x =  u, y = -v, z =  h, w = 1 },
+				  b2 = { x =  u, y =  v, z =  h, w = 1 },
+				  c2 = { x =  u, y =  v, z = -h, w = 1 },
+				  d2 = { x =  u, y = -v, z = -h, w = 1 }}
+	end
+
 	cls()
 	g_ticks = 0
 	g_scene = 1
@@ -240,12 +251,14 @@ function init()
 		{ clr = true,  delay =  4, func = polygon1 },
 		{ clr = true,  delay =  4, func = polygon2 },
 		{ clr = true,  delay =  5, func = image },
-		{ clr = true,  delay =  1, func = balls } }
+		{ clr = true,  delay =  1, func = balls },
+		{ clr = true,  delay =  1, func = rpp }}
 	g_graph_prev = 0
 	init_lines()
 	init_polygon()
 	init_image()
 	init_balls()
+	init_rpp(17, 33, 50)
 end
 
 function mix(a, b, t)
@@ -509,6 +522,179 @@ function clip_polygon(p, clipper)
 	end
 
 	return new_p
+end
+
+function mult_vec3_vec3(v1, v2)
+	return v1.x * v2.x + v1.y * v2.y + v1.z * v2.z
+end
+
+function mult_vec4_matr(v, m)
+	local r = {
+		x = v.x * m[1][1] + v.y * m[2][1] + v.z * m[3][1] + v.w * m[4][1],
+		y = v.x * m[1][2] + v.y * m[2][2] + v.z * m[3][2] + v.w * m[4][2],
+		z = v.x * m[1][3] + v.y * m[2][3] + v.z * m[3][3] + v.w * m[4][3],
+		w = v.x * m[1][4] + v.y * m[2][4] + v.z * m[3][4] + v.w * m[4][4]
+	}
+
+	r.x = r.x / r.w
+	r.y = r.y / r.w
+	r.z = r.z / r.w
+	r.w = 1
+	return r
+end
+
+function mult_matr_matr(m1, m2)
+	local r = {{ 0, 0, 0, 0 },
+			   { 0, 0, 0, 0 },
+			   { 0, 0, 0, 0 },
+			   { 0, 0, 0, 0 }}
+
+	for i = 1, 4 do
+		for j = 1, 4 do
+			for k = 1, 4 do
+				r[i][j] = r[i][j] + m1[i][k] * m2[k][j]
+			end
+		end
+	end
+
+	return r
+end
+
+function movement_matr(v)
+	return {{   1,   0,   0, 0 },
+			{   0,   1,   0, 0 },
+			{   0,   0,   1, 0 },
+			{ v.x, v.y, v.z, 1 }}
+end
+
+function perspective_proj_matr(k)
+	return {{ 1, 0, 0,		0 },
+			{ 0, 1, 0,		0 },
+			{ 0, 0, 1, -1 / k },
+			{ 0, 0, 0,		1 }}
+end
+
+function rotation_matr(axis, angle)
+	norm_axis = normalize(axis)
+	x = norm_axis.x
+	y = norm_axis.y
+	z = norm_axis.z
+	c = math.cos(angle)
+	s = math.sin(angle)
+
+	m = {{ x * x + (1 - x * x) * c,
+		   x * y * (1 - c) + z * s,
+		   z * x * (1 - c) - y * s,
+		   0 },
+		 { x * y * (1 - c) - z * s,
+		   y * y + (1 - y * y) * c,
+		   y * z * (1 - c) + x * s,
+		   0 },
+		 { z * x * (1 - c) + y * s,
+		   y * z * (1 - c) - x * s,
+		   z * z + (1 - z * z) * c,
+		   0 },
+		 { 0, 0, 0, 1 }}
+	return m
+end
+
+function line_3d(p1, p2, proj, color)
+	local a = mult_vec4_matr(p1, proj)
+	local b = mult_vec4_matr(p2, proj)
+	line(0.5 + a.x, 0.5 + a.y, 0.5 + b.x, 0.5 + b.y, color)
+end
+
+function normalize(v)
+	local len = math.sqrt(math.pow(v.x, 2) +
+						  math.pow(v.y, 2) +
+						  math.pow(v.z, 2))
+	return { x = v.x / len,
+			 y = v.y / len,
+			 z = v.z / len }
+end
+
+function normal(a, b, c)
+	local v1 = { x = b.x - a.x,
+				 y = b.y - a.y,
+				 z = b.z - a.z }
+	local v2 = { x = c.x - a.x,
+				 y = c.y - a.y,
+				 z = c.z - a.z }
+	local pr = { x = v1.y * v2.z - v1.z * v2.y,
+				 y = v1.z * v2.x - v1.x * v2.z,
+				 z = v1.x * v2.y - v1.y * v2.x }
+	return normalize(pr)
+end
+
+function mult_rpp_matr(r, m)
+	return { a1 = mult_vec4_matr(r.a1, m),
+			 b1 = mult_vec4_matr(r.b1, m),
+			 c1 = mult_vec4_matr(r.c1, m),
+			 d1 = mult_vec4_matr(r.d1, m),
+			 a2 = mult_vec4_matr(r.a2, m),
+			 b2 = mult_vec4_matr(r.b2, m),
+			 c2 = mult_vec4_matr(r.c2, m),
+			 d2 = mult_vec4_matr(r.d2, m) }
+end
+
+function rpp_draw(rpp, proj, transparent, color)
+	function is_visible(a, b, p, n)
+		local v = { x = (a.x + b.x) / 2 - p.x,
+					y = (a.y + b.y) / 2 - p.y,
+					z = (a.z + b.z) / 2 - p.z }
+		return mult_vec3_vec3(v, n) < 0
+	end
+
+	function draw_face(p1, p2, p3, p4, n)
+		local p = { x = 0, y = 0, z = -1 / proj[3][4] }
+		if transparent or is_visible(p1, p3, p, n) then
+			line_3d(p1, p2, proj, color)
+			line_3d(p2, p3, proj, color)
+			line_3d(p3, p4, proj, color)
+			line_3d(p4, p1, proj, color)
+		end
+	end
+
+	local a1 = rpp.a1
+	local b1 = rpp.b1
+	local c1 = rpp.c1
+	local d1 = rpp.d1
+	local a2 = rpp.a2
+	local b2 = rpp.b2
+	local c2 = rpp.c2
+	local d2 = rpp.d2
+
+	local n_front = normal(a1, a2, b2)
+	local n_right = normal(b1, b2, c1)
+	local n_top   = normal(b2, a2, c2)
+	local n_back  = { x = -n_front.x,
+					  y = -n_front.y,
+					  z = -n_front.z }
+	local n_left  = { x = -n_right.x,
+					  y = -n_right.y,
+					  z = -n_right.z }
+	local n_bott  = { x = -n_top.x,
+					  y = -n_top.y,
+					  z = -n_top.z }
+
+	draw_face(a1, b1, b2, a2, n_front)
+	draw_face(b1, b2, c2, c1, n_right)
+	draw_face(a2, b2, c2, d2, n_top)
+	draw_face(d1, c1, c2, d2, n_back)
+	draw_face(a1, a2, d2, d1, n_left)
+	draw_face(a1, b1, c1, d1, n_bott)
+end
+
+function rpp()
+	local axis = { x = 0.5, y = 1, z = 1 }
+	local rm = rotation_matr(axis, 0.03)
+	g_rpp = mult_rpp_matr(g_rpp, rm)
+	local pp = 100 * (2 + math.cos(g_ticks / 32))
+	local pm = perspective_proj_matr(pp)
+	local mv = { x = SCR_W / 2, y = SCR_H / 2, z = 0 }
+	local mm = movement_matr(mv)
+	pm = mult_matr_matr(pm, mm)
+	rpp_draw(g_rpp, pm, false, 11)
 end
 
 function intro()
